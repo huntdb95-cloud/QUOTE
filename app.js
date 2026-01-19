@@ -42,7 +42,9 @@ const btnOpen = document.getElementById("btnOpen");
 const btnSave = document.getElementById("btnSave");
 const btnSaveAs = document.getElementById("btnSaveAs");
 const btnDownload = document.getElementById("btnDownload");
+const btnImportFile = document.getElementById("btnImportFile");
 const btnImport = document.getElementById("btnImport");
+const fileImportEl = document.getElementById("fileImport");
 
 const toastEl = document.getElementById("toast");
 
@@ -62,6 +64,11 @@ let appState = getDefaultAppState();
 /* ---------- Default State ---------- */
 function getDefaultAppState() {
   return {
+    meta: {
+      version: 1,
+      updatedAt: new Date().toISOString()
+    },
+    lastActiveTab: "auto",
     customer: {
       name: "",
       phone: "",
@@ -74,32 +81,34 @@ function getDefaultAppState() {
       }
     },
     auto: {
-      driverCount: 1,
-      vehicleCount: 1,
+      counts: {
+        drivers: 0,
+        vehicles: 0
+      },
       drivers: [],
       vehicles: []
     },
     home: {
-      propertyAddress: "",
-      city: "",
-      state: "",
-      zip: "",
+      propertyAddress: {
+        street: "",
+        city: "",
+        state: "",
+        zip: ""
+      },
       yearBuilt: "",
       squareFeet: "",
       constructionType: "",
       roofType: "",
       roofAge: "",
-      numberOfStories: "",
-      dwellingCoverage: "",
+      stories: "",
+      dwellingCoverageA: "",
       deductible: "",
       priorCarrier: "",
-      priorCarrierExpiration: "",
+      expirationDate: "",
       claimsLast5Years: "",
       claimsNotes: "",
       occupancy: "",
-      securityAlarms: "",
-      hydrantDistance: "",
-      fireStationDistance: "",
+      securityNotes: "",
       mortgageeName: "",
       mortgageeLoanNumber: ""
     },
@@ -110,35 +119,34 @@ function getDefaultAppState() {
       yearsInBusiness: "",
       naics: "",
       sic: "",
-      address: "",
-      city: "",
-      state: "",
-      zip: "",
-      contactName: "",
-      contactPhone: "",
-      contactEmail: "",
+      address: {
+        street: "",
+        city: "",
+        state: "",
+        zip: ""
+      },
+      contact: {
+        name: "",
+        phone: "",
+        email: ""
+      },
       workersComp: {
         payrollEstimate: "",
-        numberOfEmployees: "",
+        numEmployees: "",
         classCodes: "",
         priorCarrier: "",
-        priorCarrierExpiration: "",
+        expirationDate: "",
         claims: "",
         claimsNotes: ""
       },
       generalLiability: {
-        salesRevenueEstimate: "",
+        salesEstimate: "",
         subcontractorsUsed: "",
-        descriptionOfOperations: "",
+        operationsDescription: "",
         priorCarrier: "",
-        priorCarrierExpiration: ""
+        expirationDate: ""
       }
-    },
-    meta: {
-      version: 2,
-      updatedAt: new Date().toISOString()
-    },
-    lastActiveTab: "auto"
+    }
   };
 }
 
@@ -249,8 +257,8 @@ function getAppStateFromUI() {
 
   // Auto tab (if visible)
   if (panelAutoEl && !panelAutoEl.classList.contains("hidden")) {
-    appState.auto.driverCount = Number(driverCountEl.value || 0);
-    appState.auto.vehicleCount = Number(vehicleCountEl.value || 0);
+    appState.auto.counts.drivers = Number(driverCountEl?.value || 0);
+    appState.auto.counts.vehicles = Number(vehicleCountEl?.value || 0);
     appState.auto.drivers = snapshotDriversFromUI();
     appState.auto.vehicles = snapshotVehiclesFromUI();
   }
@@ -260,7 +268,18 @@ function getAppStateFromUI() {
     const homeInputs = homeContentEl.querySelectorAll("input, select, textarea");
     homeInputs.forEach(input => {
       const field = input.dataset.field;
-      if (field && appState.home.hasOwnProperty(field)) {
+      if (!field) return;
+      
+      // Handle propertyAddress nested fields
+      if (field === "propertyStreet") {
+        appState.home.propertyAddress.street = input.value || "";
+      } else if (field === "propertyCity") {
+        appState.home.propertyAddress.city = input.value || "";
+      } else if (field === "propertyState") {
+        appState.home.propertyAddress.state = input.value || "";
+      } else if (field === "propertyZip") {
+        appState.home.propertyAddress.zip = input.value || "";
+      } else if (appState.home.hasOwnProperty(field)) {
         appState.home[field] = input.value || "";
       }
     });
@@ -271,17 +290,41 @@ function getAppStateFromUI() {
     const businessInputs = businessContentEl.querySelectorAll("input, select, textarea");
     businessInputs.forEach(input => {
       const field = input.dataset.field;
-      if (field?.startsWith("wc_")) {
+      if (!field) return;
+      
+      // Handle address nested fields
+      if (field === "businessStreet") {
+        appState.business.address.street = input.value || "";
+      } else if (field === "businessCity") {
+        appState.business.address.city = input.value || "";
+      } else if (field === "businessState") {
+        appState.business.address.state = input.value || "";
+      } else if (field === "businessZip") {
+        appState.business.address.zip = input.value || "";
+      } else if (field === "contactName") {
+        appState.business.contact.name = input.value || "";
+      } else if (field === "contactPhone") {
+        appState.business.contact.phone = input.value || "";
+      } else if (field === "contactEmail") {
+        appState.business.contact.email = input.value || "";
+        } else if (field?.startsWith("wc_")) {
         const wcField = field.replace("wc_", "");
-        if (appState.business.workersComp.hasOwnProperty(wcField)) {
-          appState.business.workersComp[wcField] = input.value || "";
+        // Map old field names to new schema
+        const mappedField = wcField === "numberOfEmployees" ? "numEmployees" :
+                           wcField === "priorCarrierExpiration" ? "expirationDate" : wcField;
+        if (appState.business.workersComp.hasOwnProperty(mappedField)) {
+          appState.business.workersComp[mappedField] = input.value || "";
         }
       } else if (field?.startsWith("gl_")) {
         const glField = field.replace("gl_", "");
-        if (appState.business.generalLiability.hasOwnProperty(glField)) {
-          appState.business.generalLiability[glField] = input.value || "";
+        // Map old field names to new schema
+        const mappedField = glField === "salesRevenueEstimate" ? "salesEstimate" :
+                           glField === "descriptionOfOperations" ? "operationsDescription" :
+                           glField === "priorCarrierExpiration" ? "expirationDate" : glField;
+        if (appState.business.generalLiability.hasOwnProperty(mappedField)) {
+          appState.business.generalLiability[mappedField] = input.value || "";
         }
-      } else if (field && appState.business.hasOwnProperty(field)) {
+      } else if (appState.business.hasOwnProperty(field)) {
         appState.business[field] = input.value || "";
       }
     });
@@ -294,68 +337,56 @@ function getAppStateFromUI() {
 function applyAppStateToUI(state) {
   if (!state || typeof state !== "object") return;
 
-  // Migrate old format if needed
-  state = migrateOldFormat(state);
+  // Normalize imported state first
+  const normalizedState = normalizeImportedState(state);
+  
+  // Update appState from normalized state
+  appState = normalizedState;
 
   // Customer
-  if (custNameEl) custNameEl.value = state.customer?.name ?? "";
-  if (custPhoneEl) custPhoneEl.value = state.customer?.phone ?? "";
-  if (custEmailEl) custEmailEl.value = state.customer?.email ?? "";
+  if (custNameEl) custNameEl.value = appState.customer.name || "";
+  if (custPhoneEl) custPhoneEl.value = appState.customer.phone || "";
+  if (custEmailEl) custEmailEl.value = appState.customer.email || "";
   
   // Customer address
-  const address = state.customer?.address || {};
-  if (custStreetEl) custStreetEl.value = address.street ?? "";
-  if (custCityEl) custCityEl.value = address.city ?? "";
+  const customerAddress = appState.customer.address || {};
+  if (custStreetEl) custStreetEl.value = customerAddress.street || "";
+  if (custCityEl) custCityEl.value = customerAddress.city || "";
   if (custStateEl) {
-    custStateEl.value = address.state ?? "";
+    custStateEl.value = customerAddress.state || "";
     // Populate state dropdown if not already done
     if (custStateEl.options.length <= 1) {
-      populateStateDropdown(custStateEl, address.state);
+      populateStateDropdown(custStateEl, customerAddress.state);
     }
   }
-  if (custZipEl) custZipEl.value = address.zip ?? "";
+  if (custZipEl) custZipEl.value = customerAddress.zip || "";
 
-  // Auto
-  if (state.auto) {
-    appState.auto.driverCount = Number(state.auto.driverCount ?? state.counts?.drivers ?? 1);
-    appState.auto.vehicleCount = Number(state.auto.vehicleCount ?? state.counts?.vehicles ?? 1);
-    appState.auto.drivers = state.auto.drivers || state.drivers || [];
-    appState.auto.vehicles = state.auto.vehicles || state.vehicles || [];
-  }
+  // Auto: Set counts and render with seed arrays
+  const driverCount = appState.auto.counts.drivers || 0;
+  const vehicleCount = appState.auto.counts.vehicles || 0;
+  
+  if (driverCountEl) driverCountEl.value = String(driverCount);
+  if (vehicleCountEl) vehicleCountEl.value = String(vehicleCount);
+  
+  // Render drivers/vehicles using seed arrays from state (NOT from UI)
+  renderDrivers(driverCount, appState.auto.drivers || []);
+  renderVehicles(vehicleCount, appState.auto.vehicles || []);
 
-  // Home
-  if (state.home) {
-    Object.keys(state.home).forEach(key => {
-      if (appState.home.hasOwnProperty(key)) {
-        appState.home[key] = state.home[key] ?? "";
-      }
-    });
-  }
+  // Home: Render home tab (will set all fields from state)
+  renderHomeTab();
 
-  // Business
-  if (state.business) {
-    Object.keys(state.business).forEach(key => {
-      if (key === "workersComp" && state.business.workersComp) {
-        Object.keys(state.business.workersComp).forEach(wcKey => {
-          if (appState.business.workersComp.hasOwnProperty(wcKey)) {
-            appState.business.workersComp[wcKey] = state.business.workersComp[wcKey] ?? "";
-          }
-        });
-      } else if (key === "generalLiability" && state.business.generalLiability) {
-        Object.keys(state.business.generalLiability).forEach(glKey => {
-          if (appState.business.generalLiability.hasOwnProperty(glKey)) {
-            appState.business.generalLiability[glKey] = state.business.generalLiability[glKey] ?? "";
-          }
-        });
-      } else if (appState.business.hasOwnProperty(key)) {
-        appState.business[key] = state.business[key] ?? "";
-      }
-    });
-  }
+  // Business: Render business tab (will set all fields from state)
+  renderBusinessTab();
 
   // Restore last active tab or default to auto
-  const activeTab = state.lastActiveTab || "auto";
+  const activeTab = appState.lastActiveTab || "auto";
   setActiveTab(activeTab);
+}
+
+/* ---------- Set App State and Refresh UI ---------- */
+function setAppStateAndRefresh(state) {
+  applyAppStateToUI(state);
+  saveToLocalStorage();
 }
 
 /* ---------- Populate State Dropdown ---------- */
@@ -371,40 +402,131 @@ function populateStateDropdown(selectEl, selectedValue = "") {
   });
 }
 
-/* ---------- Backwards Compatibility: Migrate Old Format ---------- */
-function migrateOldFormat(data) {
-  // If it's old format (has counts/drivers/vehicles at root)
-  if (data.counts || (data.drivers && !data.auto)) {
-    const defaultState = getDefaultAppState();
-    return {
-      customer: {
-        ...defaultState.customer,
-        ...(data.customer || {})
-      },
-      auto: {
-        driverCount: data.counts?.drivers ?? data.drivers?.length ?? 1,
-        vehicleCount: data.counts?.vehicles ?? data.vehicles?.length ?? 1,
-        drivers: data.drivers || [],
-        vehicles: data.vehicles || []
-      },
-      home: defaultState.home,
-      business: defaultState.business,
-      meta: { version: 2, updatedAt: new Date().toISOString() },
-      lastActiveTab: data.lastActiveTab || "auto"
+/* ---------- Normalize Imported State ---------- */
+function normalizeImportedState(importedObj) {
+  if (!importedObj || typeof importedObj !== "object") {
+    return getDefaultAppState();
+  }
+
+  const defaultState = getDefaultAppState();
+  const normalized = JSON.parse(JSON.stringify(defaultState)); // Deep clone defaults
+
+  // Merge imported data, preserving structure
+  if (importedObj.customer) {
+    normalized.customer = {
+      name: importedObj.customer.name ?? normalized.customer.name,
+      phone: importedObj.customer.phone ?? normalized.customer.phone,
+      email: importedObj.customer.email ?? normalized.customer.email,
+      address: {
+        street: importedObj.customer.address?.street ?? normalized.customer.address.street,
+        city: importedObj.customer.address?.city ?? normalized.customer.address.city,
+        state: importedObj.customer.address?.state ?? normalized.customer.address.state,
+        zip: importedObj.customer.address?.zip ?? normalized.customer.address.zip
+      }
     };
   }
-  
-  // Ensure customer.address exists in migrated data
-  if (data.customer && !data.customer.address) {
-    data.customer.address = getDefaultAppState().customer.address;
+
+  // Auto: handle old format migration
+  if (importedObj.auto) {
+    normalized.auto = {
+      counts: {
+        drivers: importedObj.auto.counts?.drivers ?? importedObj.auto.driverCount ?? importedObj.counts?.drivers ?? (importedObj.auto.drivers?.length ?? 0),
+        vehicles: importedObj.auto.counts?.vehicles ?? importedObj.auto.vehicleCount ?? importedObj.counts?.vehicles ?? (importedObj.auto.vehicles?.length ?? 0)
+      },
+      drivers: importedObj.auto.drivers ?? importedObj.drivers ?? [],
+      vehicles: importedObj.auto.vehicles ?? importedObj.vehicles ?? []
+    };
+  } else if (importedObj.counts || importedObj.drivers) {
+    // Old format: counts/drivers/vehicles at root
+    normalized.auto = {
+      counts: {
+        drivers: importedObj.counts?.drivers ?? importedObj.drivers?.length ?? 0,
+        vehicles: importedObj.counts?.vehicles ?? importedObj.vehicles?.length ?? 0
+      },
+      drivers: importedObj.drivers ?? [],
+      vehicles: importedObj.vehicles ?? []
+    };
   }
-  
-  // Ensure lastActiveTab exists
-  if (!data.lastActiveTab) {
-    data.lastActiveTab = "auto";
+
+  // Home: handle flat structure migration
+  if (importedObj.home) {
+    const home = importedObj.home;
+    normalized.home = {
+      propertyAddress: {
+        street: home.propertyAddress?.street ?? home.propertyAddress ?? normalized.home.propertyAddress.street,
+        city: home.propertyAddress?.city ?? home.city ?? normalized.home.propertyAddress.city,
+        state: home.propertyAddress?.state ?? home.state ?? normalized.home.propertyAddress.state,
+        zip: home.propertyAddress?.zip ?? home.zip ?? normalized.home.propertyAddress.zip
+      },
+      yearBuilt: home.yearBuilt ?? normalized.home.yearBuilt,
+      squareFeet: home.squareFeet ?? normalized.home.squareFeet,
+      constructionType: home.constructionType ?? normalized.home.constructionType,
+      roofType: home.roofType ?? normalized.home.roofType,
+      roofAge: home.roofAge ?? normalized.home.roofAge,
+      stories: home.stories ?? home.numberOfStories ?? normalized.home.stories,
+      dwellingCoverageA: home.dwellingCoverageA ?? home.dwellingCoverage ?? normalized.home.dwellingCoverageA,
+      deductible: home.deductible ?? normalized.home.deductible,
+      priorCarrier: home.priorCarrier ?? normalized.home.priorCarrier,
+      expirationDate: home.expirationDate ?? home.priorCarrierExpiration ?? normalized.home.expirationDate,
+      claimsLast5Years: home.claimsLast5Years ?? normalized.home.claimsLast5Years,
+      claimsNotes: home.claimsNotes ?? normalized.home.claimsNotes,
+      occupancy: home.occupancy ?? normalized.home.occupancy,
+      securityNotes: home.securityNotes ?? home.securityAlarms ?? normalized.home.securityNotes,
+      mortgageeName: home.mortgageeName ?? normalized.home.mortgageeName,
+      mortgageeLoanNumber: home.mortgageeLoanNumber ?? normalized.home.mortgageeLoanNumber
+    };
   }
-  
-  return data;
+
+  // Business: handle flat structure migration
+  if (importedObj.business) {
+    const biz = importedObj.business;
+    normalized.business = {
+      businessName: biz.businessName ?? normalized.business.businessName,
+      entityType: biz.entityType ?? normalized.business.entityType,
+      taxId: biz.taxId ?? normalized.business.taxId,
+      yearsInBusiness: biz.yearsInBusiness ?? normalized.business.yearsInBusiness,
+      naics: biz.naics ?? normalized.business.naics,
+      sic: biz.sic ?? normalized.business.sic,
+      address: {
+        street: biz.address?.street ?? (typeof biz.address === "string" ? biz.address : "") ?? normalized.business.address.street,
+        city: biz.address?.city ?? biz.city ?? normalized.business.address.city,
+        state: biz.address?.state ?? biz.state ?? normalized.business.address.state,
+        zip: biz.address?.zip ?? biz.zip ?? normalized.business.address.zip
+      },
+      contact: {
+        name: biz.contact?.name ?? biz.contactName ?? normalized.business.contact.name,
+        phone: biz.contact?.phone ?? biz.contactPhone ?? normalized.business.contact.phone,
+        email: biz.contact?.email ?? biz.contactEmail ?? normalized.business.contact.email
+      },
+      workersComp: {
+        payrollEstimate: biz.workersComp?.payrollEstimate ?? biz.workersComp?.payroll ?? normalized.business.workersComp.payrollEstimate,
+        numEmployees: biz.workersComp?.numEmployees ?? biz.workersComp?.numberOfEmployees ?? normalized.business.workersComp.numEmployees,
+        classCodes: biz.workersComp?.classCodes ?? normalized.business.workersComp.classCodes,
+        priorCarrier: biz.workersComp?.priorCarrier ?? normalized.business.workersComp.priorCarrier,
+        expirationDate: biz.workersComp?.expirationDate ?? biz.workersComp?.priorCarrierExpiration ?? normalized.business.workersComp.expirationDate,
+        claims: biz.workersComp?.claims ?? normalized.business.workersComp.claims,
+        claimsNotes: biz.workersComp?.claimsNotes ?? normalized.business.workersComp.claimsNotes
+      },
+      generalLiability: {
+        salesEstimate: biz.generalLiability?.salesEstimate ?? biz.generalLiability?.salesRevenueEstimate ?? normalized.business.generalLiability.salesEstimate,
+        subcontractorsUsed: biz.generalLiability?.subcontractorsUsed ?? normalized.business.generalLiability.subcontractorsUsed,
+        operationsDescription: biz.generalLiability?.operationsDescription ?? biz.generalLiability?.descriptionOfOperations ?? normalized.business.generalLiability.operationsDescription,
+        priorCarrier: biz.generalLiability?.priorCarrier ?? normalized.business.generalLiability.priorCarrier,
+        expirationDate: biz.generalLiability?.expirationDate ?? biz.generalLiability?.priorCarrierExpiration ?? normalized.business.generalLiability.expirationDate
+      }
+    };
+  }
+
+  // Meta and lastActiveTab
+  normalized.lastActiveTab = importedObj.lastActiveTab ?? "auto";
+  normalized.meta.updatedAt = new Date().toISOString();
+
+  return normalized;
+}
+
+/* ---------- Backwards Compatibility: Migrate Old Format ---------- */
+function migrateOldFormat(data) {
+  return normalizeImportedState(data);
 }
 
 /* ---------- Select populate ---------- */
@@ -619,6 +741,7 @@ function renderVehicles(count, seedArray) {
 /* ---------- Render Home Tab ---------- */
 function renderHomeTab() {
   const state = appState.home;
+  const propAddr = state.propertyAddress || {};
   
   homeContentEl.innerHTML = `
     <div class="card">
@@ -629,22 +752,22 @@ function renderHomeTab() {
       <div class="row">
         <div class="field" style="flex: 2;">
           <label>Property Address</label>
-          <input data-field="propertyAddress" value="${state.propertyAddress || ""}" autocomplete="off">
+          <input data-field="propertyStreet" value="${propAddr.street || ""}" autocomplete="street-address">
         </div>
         <div class="field">
           <label>City</label>
-          <input data-field="city" value="${state.city || ""}" autocomplete="off">
+          <input data-field="propertyCity" value="${propAddr.city || ""}" autocomplete="address-level2">
         </div>
         <div class="field">
           <label>State</label>
-          <select data-field="state">
+          <select data-field="propertyState">
             <option value="">—</option>
-            ${stateOptionsHtml(state.state || "")}
+            ${stateOptionsHtml(propAddr.state || "")}
           </select>
         </div>
         <div class="field">
           <label>ZIP</label>
-          <input data-field="zip" value="${state.zip || ""}" autocomplete="off" maxlength="10">
+          <input data-field="propertyZip" value="${propAddr.zip || ""}" autocomplete="postal-code" maxlength="10">
         </div>
       </div>
 
@@ -669,10 +792,10 @@ function renderHomeTab() {
             <option value="Other" ${state.constructionType === "Other" ? "selected" : ""}>Other</option>
           </select>
         </div>
-        <div class="field">
-          <label>Number of Stories</label>
-          <input data-field="numberOfStories" type="number" value="${state.numberOfStories || ""}" min="1" max="10">
-        </div>
+      <div class="field">
+        <label>Number of Stories</label>
+        <input data-field="stories" type="number" value="${state.stories || ""}" min="1" max="10">
+      </div>
       </div>
 
       <div class="row" style="margin-top: 12px">
@@ -703,7 +826,7 @@ function renderHomeTab() {
       <div class="row">
         <div class="field">
           <label>Dwelling Coverage (A)</label>
-          <input data-field="dwellingCoverage" type="number" value="${state.dwellingCoverage || ""}" min="0" placeholder="$">
+          <input data-field="dwellingCoverageA" type="number" value="${state.dwellingCoverageA || ""}" min="0" placeholder="$">
         </div>
         <div class="field">
           <label>Deductible</label>
@@ -715,7 +838,7 @@ function renderHomeTab() {
         </div>
         <div class="field">
           <label>Prior Carrier Expiration</label>
-          <input data-field="priorCarrierExpiration" type="date" value="${state.priorCarrierExpiration || ""}">
+          <input data-field="expirationDate" type="date" value="${state.expirationDate || ""}">
         </div>
       </div>
     </div>
@@ -744,19 +867,8 @@ function renderHomeTab() {
           </select>
         </div>
         <div class="field">
-          <label>Security Alarms</label>
-          <input data-field="securityAlarms" value="${state.securityAlarms || ""}" autocomplete="off" placeholder="e.g., Smoke, Burglar">
-        </div>
-      </div>
-
-      <div class="row" style="margin-top: 12px">
-        <div class="field">
-          <label>Hydrant Distance (miles)</label>
-          <input data-field="hydrantDistance" type="number" value="${state.hydrantDistance || ""}" min="0" step="0.1">
-        </div>
-        <div class="field">
-          <label>Fire Station Distance (miles)</label>
-          <input data-field="fireStationDistance" type="number" value="${state.fireStationDistance || ""}" min="0" step="0.1">
+          <label>Security Notes</label>
+          <input data-field="securityNotes" value="${state.securityNotes || ""}" autocomplete="off" placeholder="e.g., Smoke, Burglar">
         </div>
       </div>
 
@@ -856,37 +968,37 @@ function renderBusinessTab() {
       <div class="row" style="margin-top: 12px">
         <div class="field" style="flex: 2">
           <label>Business Address</label>
-          <input data-field="address" value="${state.address || ""}" autocomplete="off">
+          <input data-field="businessStreet" value="${bizAddr.street || ""}" autocomplete="street-address">
         </div>
         <div class="field">
           <label>City</label>
-          <input data-field="city" value="${state.city || ""}" autocomplete="off">
+          <input data-field="businessCity" value="${bizAddr.city || ""}" autocomplete="address-level2">
         </div>
         <div class="field">
           <label>State</label>
-          <select data-field="state">
+          <select data-field="businessState">
             <option value="">—</option>
-            ${stateOptionsHtml(state.state || "")}
+            ${stateOptionsHtml(bizAddr.state || "")}
           </select>
         </div>
         <div class="field">
           <label>ZIP</label>
-          <input data-field="zip" value="${state.zip || ""}" autocomplete="off" maxlength="10">
+          <input data-field="businessZip" value="${bizAddr.zip || ""}" autocomplete="postal-code" maxlength="10">
         </div>
       </div>
 
       <div class="row" style="margin-top: 12px">
         <div class="field">
           <label>Contact Name</label>
-          <input data-field="contactName" value="${state.contactName || ""}" autocomplete="off">
+          <input data-field="contactName" value="${contact.name || ""}" autocomplete="off">
         </div>
         <div class="field">
           <label>Contact Phone</label>
-          <input data-field="contactPhone" value="${state.contactPhone || ""}" autocomplete="off">
+          <input data-field="contactPhone" value="${contact.phone || ""}" autocomplete="off">
         </div>
         <div class="field">
           <label>Contact Email</label>
-          <input data-field="contactEmail" type="email" value="${state.contactEmail || ""}" autocomplete="off">
+          <input data-field="contactEmail" type="email" value="${contact.email || ""}" autocomplete="off">
         </div>
       </div>
     </div>
@@ -903,7 +1015,7 @@ function renderBusinessTab() {
         </div>
         <div class="field">
           <label>Number of Employees</label>
-          <input data-field="wc_numberOfEmployees" type="number" value="${wc.numberOfEmployees || ""}" min="0">
+          <input data-field="wc_numEmployees" type="number" value="${wc.numEmployees || ""}" min="0">
         </div>
         <div class="field" style="flex: 2">
           <label>Class Codes</label>
@@ -918,7 +1030,7 @@ function renderBusinessTab() {
         </div>
         <div class="field">
           <label>Prior Carrier Expiration</label>
-          <input data-field="wc_priorCarrierExpiration" type="date" value="${wc.priorCarrierExpiration || ""}">
+          <input data-field="wc_expirationDate" type="date" value="${wc.expirationDate || ""}">
         </div>
         <div class="field">
           <label>Claims</label>
@@ -946,7 +1058,7 @@ function renderBusinessTab() {
       <div class="row">
         <div class="field">
           <label>Annual Sales/Revenue Estimate</label>
-          <input data-field="gl_salesRevenueEstimate" type="number" value="${gl.salesRevenueEstimate || ""}" min="0" placeholder="$">
+          <input data-field="gl_salesEstimate" type="number" value="${gl.salesEstimate || ""}" min="0" placeholder="$">
         </div>
         <div class="field">
           <label>Subcontractors Used</label>
@@ -961,7 +1073,7 @@ function renderBusinessTab() {
       <div class="row" style="margin-top: 12px">
         <div class="field" style="flex: 1">
           <label>Description of Operations</label>
-          <textarea data-field="gl_descriptionOfOperations" placeholder="Describe what the business does...">${gl.descriptionOfOperations || ""}</textarea>
+          <textarea data-field="gl_operationsDescription" placeholder="Describe what the business does...">${gl.operationsDescription || ""}</textarea>
         </div>
       </div>
 
@@ -972,7 +1084,7 @@ function renderBusinessTab() {
         </div>
         <div class="field">
           <label>Prior Carrier Expiration</label>
-          <input data-field="gl_priorCarrierExpiration" type="date" value="${gl.priorCarrierExpiration || ""}">
+          <input data-field="gl_expirationDate" type="date" value="${gl.expirationDate || ""}">
         </div>
       </div>
     </div>
@@ -1088,22 +1200,30 @@ async function saveFile() {
 
 async function openFile() {
   if (!fileApiSupported()) {
-    toast("File open not supported here. Use Import JSON instead.");
+    toast("File open not supported here. Use Import File… instead.");
     return;
   }
 
-  const [handle] = await window.showOpenFilePicker({
-    types: [{ description: "Quote Intake JSON", accept: { "application/json": [".json"] } }],
-    multiple: false
-  });
+  try {
+    const [handle] = await window.showOpenFilePicker({
+      types: [{ description: "Quote Intake JSON", accept: { "application/json": [".json"] } }],
+      multiple: false
+    });
 
-  const file = await handle.getFile();
-  const text = await file.text();
-  const obj = JSON.parse(text);
+    const file = await handle.getFile();
+    const text = await file.text();
+    const obj = JSON.parse(text);
 
-  fileHandle = handle;
-  importJSON(obj);
-  toast("Opened");
+    fileHandle = handle;
+    if (importJSON(obj)) {
+      toast("Opened");
+    }
+  } catch (error) {
+    if (error.name !== "AbortError") {
+      toast("Error opening file: " + (error.message || "Unknown error"));
+    }
+    // AbortError means user cancelled - don't show error
+  }
 }
 
 function safeFilenameFromCustomer(data) {
@@ -1132,14 +1252,60 @@ function downloadJson() {
 
 function importFromJsonBox() {
   const raw = (jsonBoxEl.value || "").trim();
-  if (!raw) return toast("Paste JSON into the box first");
+  if (!raw) {
+    toast("Paste JSON into the box first");
+    return;
+  }
   try {
     const obj = JSON.parse(raw);
     fileHandle = null;
-    importJSON(obj);
-    toast("Imported");
-  } catch {
-    toast("Invalid JSON");
+    if (importJSON(obj)) {
+      toast("Imported");
+    }
+  } catch (error) {
+    toast("Invalid JSON: " + (error.message || "Parse error"));
+  }
+}
+
+/* ---------- File Import Handler ---------- */
+async function importFromFile() {
+  if (!fileImportEl) return;
+  
+  fileImportEl.click();
+}
+
+async function handleFileImport(event) {
+  const file = event.target.files?.[0];
+  if (!file) return; // User cancelled
+  
+  // Reset input so same file can be selected again
+  event.target.value = "";
+
+  try {
+    // Use file.text() for modern browsers, fallback to FileReader
+    let text;
+    if (file.text) {
+      text = await file.text();
+    } else {
+      text = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsText(file);
+      });
+    }
+
+    const obj = JSON.parse(text);
+    fileHandle = null; // Importing breaks link to existing file
+    
+    if (importJSON(obj)) {
+      toast("Imported from file");
+    }
+  } catch (error) {
+    if (error.name !== "AbortError") {
+      toast("Error importing file: " + (error.message || "Invalid JSON"));
+    }
+    // AbortError means user cancelled - don't show error
   }
 }
 
@@ -1193,11 +1359,17 @@ function init() {
 
   // Buttons
   btnNew.addEventListener("click", newIntake);
-  btnOpen.addEventListener("click", () => openFile().catch(() => toast("Open cancelled")));
-  btnSave.addEventListener("click", () => saveFile().catch(() => toast("Save cancelled")));
-  btnSaveAs.addEventListener("click", () => saveAsFile().catch(() => toast("Save As cancelled")));
+  btnOpen.addEventListener("click", () => openFile().catch(() => {}));
+  btnSave.addEventListener("click", () => saveFile().catch(() => {}));
+  btnSaveAs.addEventListener("click", () => saveAsFile().catch(() => {}));
   btnDownload.addEventListener("click", downloadJson);
+  btnImportFile.addEventListener("click", importFromFile);
   btnImport.addEventListener("click", importFromJsonBox);
+  
+  // File input change handler
+  if (fileImportEl) {
+    fileImportEl.addEventListener("change", handleFileImport);
+  }
 
   // File API availability hint
   if (!fileApiSupported()) {
