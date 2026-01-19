@@ -915,16 +915,23 @@ function renderHomeTab() {
 
 /* ---------- Render Business Tab ---------- */
 function renderBusinessTab() {
-  const state = appState.business;
-  const wc = state.workersComp;
-  const gl = state.generalLiability;
+  if (!businessContentEl) {
+    console.error("businessContentEl element not found");
+    return;
+  }
+  
+  const state = appState.business || {};
+  const wc = state.workersComp || {};
+  const gl = state.generalLiability || {};
+  const bizAddr = state.address || {};
+  const contact = state.contact || {};
   
   businessContentEl.innerHTML = `
     <div class="card">
       <div class="card-header">
         <strong>Business Information</strong>
         <div class="actions">
-          <button type="button" data-action="copyTaxId">Copy Tax ID (EIN)</button>
+          <button type="button" data-action="copyTaxId">Copy EIN</button>
         </div>
       </div>
 
@@ -1006,6 +1013,9 @@ function renderBusinessTab() {
     <div class="card" style="margin-top: 12px">
       <div class="card-header">
         <strong>Workers Compensation</strong>
+        <div class="actions">
+          <button type="button" data-action="copyPayroll">Copy Payroll</button>
+        </div>
       </div>
 
       <div class="row">
@@ -1053,6 +1063,9 @@ function renderBusinessTab() {
     <div class="card" style="margin-top: 12px">
       <div class="card-header">
         <strong>General Liability</strong>
+        <div class="actions">
+          <button type="button" data-action="copySales">Copy Sales Estimate</button>
+        </div>
       </div>
 
       <div class="row">
@@ -1089,17 +1102,27 @@ function renderBusinessTab() {
       </div>
     </div>
   `;
+  
+  // Copy buttons are handled via event delegation in the document-level listener
+}
 
-  // Wire up copy buttons
-  businessContentEl.addEventListener("click", (e) => {
-    const btn = e.target.closest("button");
-    if (!btn) return;
-    const action = btn.dataset.action;
-    if (action === "copyTaxId") {
-      const taxId = businessContentEl.querySelector('[data-field="taxId"]')?.value || "";
-      copy(taxId);
-    }
-  });
+/* ---------- Handle Business Copy Buttons (Event Delegation) ---------- */
+function handleBusinessCopyButtons(e) {
+  if (!e.target.matches("[data-action]")) return;
+  const action = e.target.dataset.action;
+  const panel = e.target.closest("#panel-business");
+  if (!panel) return;
+  
+  if (action === "copyTaxId") {
+    const taxId = panel.querySelector('[data-field="taxId"]')?.value || "";
+    copy(taxId);
+  } else if (action === "copyPayroll") {
+    const payroll = panel.querySelector('[data-field="wc_payrollEstimate"]')?.value || "";
+    copy(payroll);
+  } else if (action === "copySales") {
+    const sales = panel.querySelector('[data-field="gl_salesEstimate"]')?.value || "";
+    copy(sales);
+  }
 }
 
 /* ---------- localStorage persistence ---------- */
@@ -1345,17 +1368,22 @@ function init() {
   // Auto count changes
   driverCountEl.addEventListener("change", (e) => {
     getAppStateFromUI();
-    appState.auto.driverCount = Number(e.target.value);
-    renderDrivers(appState.auto.driverCount, appState.auto.drivers);
+    appState.auto.counts.drivers = Number(e.target.value);
+    renderDrivers(appState.auto.counts.drivers, appState.auto.drivers);
     scheduleAutosave("Updated drivers");
   });
 
   vehicleCountEl.addEventListener("change", (e) => {
     getAppStateFromUI();
-    appState.auto.vehicleCount = Number(e.target.value);
-    renderVehicles(appState.auto.vehicleCount, appState.auto.vehicles);
+    appState.auto.counts.vehicles = Number(e.target.value);
+    renderVehicles(appState.auto.counts.vehicles, appState.auto.vehicles);
     scheduleAutosave("Updated vehicles");
   });
+  
+  // Render all tabs initially (ensures Business tab has content)
+  renderAutoTab();
+  renderHomeTab();
+  renderBusinessTab();
 
   // Buttons
   btnNew.addEventListener("click", newIntake);
