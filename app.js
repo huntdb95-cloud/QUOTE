@@ -1,25 +1,37 @@
 /* =========================
    Quote Intake Tool (app.js)
+   - Tabbed interface: Auto, Home, Business
+   - Unified state management (customer/auto/home/business)
    - localStorage persistence
-   - license state selector
    - save/open JSON file (File System Access API + fallback)
 ========================= */
 
-const STORAGE_KEY = "quote_intake_v1";
-const FILE_HANDLE_KEY = "quote_intake_file_handle_v1"; // not always storable depending on browser
+const STORAGE_KEY = "quote_intake_v2";
+const FILE_HANDLE_KEY = "quote_intake_file_handle_v2";
 
+// Customer fields
+const custNameEl = document.getElementById("custName");
+const custPhoneEl = document.getElementById("custPhone");
+const custEmailEl = document.getElementById("custEmail");
+
+// Auto tab fields
 const driverCountEl = document.getElementById("driverCount");
 const vehicleCountEl = document.getElementById("vehicleCount");
 const driversEl = document.getElementById("drivers");
 const vehiclesEl = document.getElementById("vehicles");
 
-const custNameEl = document.getElementById("custName");
-const custPhoneEl = document.getElementById("custPhone");
-const custEmailEl = document.getElementById("custEmail");
+// Tab containers
+const tabAutoEl = document.getElementById("tabAuto");
+const tabHomeEl = document.getElementById("tabHome");
+const tabBusinessEl = document.getElementById("tabBusiness");
+const homeContentEl = document.getElementById("homeContent");
+const businessContentEl = document.getElementById("businessContent");
 
+// JSON and status
 const jsonBoxEl = document.getElementById("jsonBox");
 const saveStatusEl = document.getElementById("saveStatus");
 
+// Buttons
 const btnNew = document.getElementById("btnNew");
 const btnOpen = document.getElementById("btnOpen");
 const btnSave = document.getElementById("btnSave");
@@ -29,6 +41,9 @@ const btnImport = document.getElementById("btnImport");
 
 const toastEl = document.getElementById("toast");
 
+// Tab buttons
+const tabButtons = document.querySelectorAll(".tab");
+
 const US_STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA",
   "HI","ID","IL","IN","IA","KS","KY","LA","ME","MD",
@@ -36,6 +51,85 @@ const US_STATES = [
   "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC",
   "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC"
 ];
+
+// Global app state - single source of truth
+let appState = getDefaultAppState();
+
+/* ---------- Default State ---------- */
+function getDefaultAppState() {
+  return {
+    customer: {
+      name: "",
+      phone: "",
+      email: ""
+    },
+    auto: {
+      driverCount: 1,
+      vehicleCount: 1,
+      drivers: [],
+      vehicles: []
+    },
+    home: {
+      propertyAddress: "",
+      city: "",
+      state: "",
+      zip: "",
+      yearBuilt: "",
+      squareFeet: "",
+      constructionType: "",
+      roofType: "",
+      roofAge: "",
+      numberOfStories: "",
+      dwellingCoverage: "",
+      deductible: "",
+      priorCarrier: "",
+      priorCarrierExpiration: "",
+      claimsLast5Years: "",
+      claimsNotes: "",
+      occupancy: "",
+      securityAlarms: "",
+      hydrantDistance: "",
+      fireStationDistance: "",
+      mortgageeName: "",
+      mortgageeLoanNumber: ""
+    },
+    business: {
+      businessName: "",
+      entityType: "",
+      taxId: "",
+      yearsInBusiness: "",
+      naics: "",
+      sic: "",
+      address: "",
+      city: "",
+      state: "",
+      zip: "",
+      contactName: "",
+      contactPhone: "",
+      contactEmail: "",
+      workersComp: {
+        payrollEstimate: "",
+        numberOfEmployees: "",
+        classCodes: "",
+        priorCarrier: "",
+        priorCarrierExpiration: "",
+        claims: "",
+        claimsNotes: ""
+      },
+      generalLiability: {
+        salesRevenueEstimate: "",
+        subcontractorsUsed: "",
+        descriptionOfOperations: "",
+        priorCarrier: "",
+        priorCarrierExpiration: ""
+      }
+    },
+    meta: {
+      version: 2,
+      updatedAt: new Date().toISOString()
+    }
+  };
+}
 
 /* ---------- Toast ---------- */
 function toast(msg) {
@@ -61,6 +155,174 @@ async function copy(text) {
     ta.remove();
     toast("Copied!");
   }
+}
+
+/* ---------- Tab Switching ---------- */
+function switchTab(tabName) {
+  // Update tab buttons
+  tabButtons.forEach(btn => {
+    if (btn.dataset.tab === tabName) {
+      btn.classList.add("active");
+    } else {
+      btn.classList.remove("active");
+    }
+  });
+
+  // Update panels
+  tabAutoEl.classList.toggle("active", tabName === "auto");
+  tabHomeEl.classList.toggle("active", tabName === "home");
+  tabBusinessEl.classList.toggle("active", tabName === "business");
+
+  // Save current tab state before switching
+  getAppStateFromUI();
+  saveToLocalStorage();
+
+  // Render the new tab (data is already in appState)
+  renderTab(tabName);
+}
+
+function renderTab(tabName) {
+  if (tabName === "auto") {
+    renderAutoTab();
+  } else if (tabName === "home") {
+    renderHomeTab();
+  } else if (tabName === "business") {
+    renderBusinessTab();
+  }
+}
+
+// Wire up tab buttons
+tabButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    switchTab(btn.dataset.tab);
+  });
+});
+
+/* ---------- State Management: Get from UI ---------- */
+function getAppStateFromUI() {
+  // Customer
+  appState.customer = {
+    name: custNameEl.value || "",
+    phone: custPhoneEl.value || "",
+    email: custEmailEl.value || ""
+  };
+
+  // Auto tab (if visible)
+  if (tabAutoEl.classList.contains("active")) {
+    appState.auto.driverCount = Number(driverCountEl.value || 0);
+    appState.auto.vehicleCount = Number(vehicleCountEl.value || 0);
+    appState.auto.drivers = snapshotDriversFromUI();
+    appState.auto.vehicles = snapshotVehiclesFromUI();
+  }
+
+  // Home tab (if visible)
+  if (tabHomeEl.classList.contains("active")) {
+    const homeInputs = homeContentEl.querySelectorAll("input, select, textarea");
+    homeInputs.forEach(input => {
+      const field = input.dataset.field;
+      if (field && appState.home.hasOwnProperty(field)) {
+        appState.home[field] = input.value || "";
+      }
+    });
+  }
+
+  // Business tab (if visible)
+  if (tabBusinessEl.classList.contains("active")) {
+    const businessInputs = businessContentEl.querySelectorAll("input, select, textarea");
+    businessInputs.forEach(input => {
+      const field = input.dataset.field;
+      if (field?.startsWith("wc_")) {
+        const wcField = field.replace("wc_", "");
+        if (appState.business.workersComp.hasOwnProperty(wcField)) {
+          appState.business.workersComp[wcField] = input.value || "";
+        }
+      } else if (field?.startsWith("gl_")) {
+        const glField = field.replace("gl_", "");
+        if (appState.business.generalLiability.hasOwnProperty(glField)) {
+          appState.business.generalLiability[glField] = input.value || "";
+        }
+      } else if (field && appState.business.hasOwnProperty(field)) {
+        appState.business[field] = input.value || "";
+      }
+    });
+  }
+
+  appState.meta.updatedAt = new Date().toISOString();
+}
+
+/* ---------- State Management: Apply to UI ---------- */
+function applyAppStateToUI(state) {
+  if (!state || typeof state !== "object") return;
+
+  // Migrate old format if needed
+  state = migrateOldFormat(state);
+
+  // Customer
+  custNameEl.value = state.customer?.name ?? "";
+  custPhoneEl.value = state.customer?.phone ?? "";
+  custEmailEl.value = state.customer?.email ?? "";
+
+  // Auto
+  if (state.auto) {
+    appState.auto.driverCount = Number(state.auto.driverCount ?? state.counts?.drivers ?? 1);
+    appState.auto.vehicleCount = Number(state.auto.vehicleCount ?? state.counts?.vehicles ?? 1);
+    appState.auto.drivers = state.auto.drivers || state.drivers || [];
+    appState.auto.vehicles = state.auto.vehicles || state.vehicles || [];
+  }
+
+  // Home
+  if (state.home) {
+    Object.keys(state.home).forEach(key => {
+      if (appState.home.hasOwnProperty(key)) {
+        appState.home[key] = state.home[key] ?? "";
+      }
+    });
+  }
+
+  // Business
+  if (state.business) {
+    Object.keys(state.business).forEach(key => {
+      if (key === "workersComp" && state.business.workersComp) {
+        Object.keys(state.business.workersComp).forEach(wcKey => {
+          if (appState.business.workersComp.hasOwnProperty(wcKey)) {
+            appState.business.workersComp[wcKey] = state.business.workersComp[wcKey] ?? "";
+          }
+        });
+      } else if (key === "generalLiability" && state.business.generalLiability) {
+        Object.keys(state.business.generalLiability).forEach(glKey => {
+          if (appState.business.generalLiability.hasOwnProperty(glKey)) {
+            appState.business.generalLiability[glKey] = state.business.generalLiability[glKey] ?? "";
+          }
+        });
+      } else if (appState.business.hasOwnProperty(key)) {
+        appState.business[key] = state.business[key] ?? "";
+      }
+    });
+  }
+
+  // Render current tab
+  const activeTab = document.querySelector(".tab.active")?.dataset.tab || "auto";
+  renderTab(activeTab);
+}
+
+/* ---------- Backwards Compatibility: Migrate Old Format ---------- */
+function migrateOldFormat(data) {
+  // If it's old format (has counts/drivers/vehicles at root)
+  if (data.counts || (data.drivers && !data.auto)) {
+    return {
+      customer: data.customer || { name: "", phone: "", email: "" },
+      auto: {
+        driverCount: data.counts?.drivers ?? data.drivers?.length ?? 1,
+        vehicleCount: data.counts?.vehicles ?? data.vehicles?.length ?? 1,
+        drivers: data.drivers || [],
+        vehicles: data.vehicles || []
+      },
+      home: getDefaultAppState().home,
+      business: getDefaultAppState().business,
+      meta: { version: 2, updatedAt: new Date().toISOString() }
+    };
+  }
+  return data;
 }
 
 /* ---------- Select populate ---------- */
@@ -96,67 +358,36 @@ async function decodeVIN(vin) {
   }
 }
 
-/* ---------- Snapshot current UI into data ---------- */
+/* ---------- Snapshot Auto Data from UI ---------- */
 function snapshotDriversFromUI() {
   const cards = [...driversEl.querySelectorAll(".card[data-driver-index]")];
   return cards.map(card => ({
-    name: card.querySelector('[data-field="name"]').value || "",
-    dob: card.querySelector('[data-field="dob"]').value || "",
-    licenseState: card.querySelector('[data-field="licenseState"]').value || "",
-    license: card.querySelector('[data-field="license"]').value || ""
+    name: card.querySelector('[data-field="name"]')?.value || "",
+    dob: card.querySelector('[data-field="dob"]')?.value || "",
+    licenseState: card.querySelector('[data-field="licenseState"]')?.value || "",
+    license: card.querySelector('[data-field="license"]')?.value || ""
   }));
 }
 
 function snapshotVehiclesFromUI() {
   const cards = [...vehiclesEl.querySelectorAll(".card[data-vehicle-index]")];
   return cards.map(card => ({
-    vin: sanitizeVin(card.querySelector('[data-field="vin"]').value || ""),
-    decoded: card.querySelector('[data-field="decoded"]').textContent || "—"
+    vin: sanitizeVin(card.querySelector('[data-field="vin"]')?.value || ""),
+    decoded: card.querySelector('[data-field="decoded"]')?.textContent || "—"
   }));
 }
 
-function getFormData() {
-  return {
-    customer: {
-      name: custNameEl.value || "",
-      phone: custPhoneEl.value || "",
-      email: custEmailEl.value || ""
-    },
-    counts: {
-      drivers: Number(driverCountEl.value || 0),
-      vehicles: Number(vehicleCountEl.value || 0)
-    },
-    drivers: snapshotDriversFromUI(),
-    vehicles: snapshotVehiclesFromUI(),
-    meta: {
-      version: 1,
-      updatedAt: new Date().toISOString()
-    }
-  };
+/* ---------- Render Auto Tab ---------- */
+function renderAutoTab() {
+  const state = appState.auto;
+  
+  driverCountEl.value = String(state.driverCount);
+  vehicleCountEl.value = String(state.vehicleCount);
+
+  renderDrivers(state.driverCount, state.drivers || []);
+  renderVehicles(state.vehicleCount, state.vehicles || []);
 }
 
-/* ---------- Apply data to UI ---------- */
-function setFormData(data) {
-  if (!data || typeof data !== "object") return;
-
-  custNameEl.value = data?.customer?.name ?? "";
-  custPhoneEl.value = data?.customer?.phone ?? "";
-  custEmailEl.value = data?.customer?.email ?? "";
-
-  const dCount = Number(data?.counts?.drivers ?? 0);
-  const vCount = Number(data?.counts?.vehicles ?? 0);
-
-  driverCountEl.value = String(dCount);
-  vehicleCountEl.value = String(vCount);
-
-  // Render with seed arrays
-  renderDrivers(dCount, data.drivers || []);
-  renderVehicles(vCount, data.vehicles || []);
-
-  scheduleAutosave("Loaded");
-}
-
-/* ---------- Cards ---------- */
 function stateOptionsHtml(selected) {
   return US_STATES.map(s => {
     const sel = (s === selected) ? "selected" : "";
@@ -279,7 +510,6 @@ function vehicleCard(index, seed) {
     }
   });
 
-  // Optional: decode on blur if VIN is valid
   vinInput.addEventListener("blur", async () => {
     const vin = sanitizeVin(vinInput.value);
     if (vin.length === 17) await doDecode();
@@ -288,7 +518,6 @@ function vehicleCard(index, seed) {
   return div;
 }
 
-/* ---------- Render while preserving existing data ---------- */
 function renderDrivers(count, seedArray) {
   const prev = seedArray?.length ? seedArray : snapshotDriversFromUI();
   driversEl.innerHTML = "";
@@ -305,6 +534,380 @@ function renderVehicles(count, seedArray) {
   }
 }
 
+/* ---------- Render Home Tab ---------- */
+function renderHomeTab() {
+  const state = appState.home;
+  
+  homeContentEl.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <strong>Property Information</strong>
+      </div>
+      
+      <div class="row">
+        <div class="field" style="flex: 2;">
+          <label>Property Address</label>
+          <input data-field="propertyAddress" value="${state.propertyAddress || ""}" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>City</label>
+          <input data-field="city" value="${state.city || ""}" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>State</label>
+          <select data-field="state">
+            <option value="">—</option>
+            ${stateOptionsHtml(state.state || "")}
+          </select>
+        </div>
+        <div class="field">
+          <label>ZIP</label>
+          <input data-field="zip" value="${state.zip || ""}" autocomplete="off" maxlength="10">
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 12px">
+        <div class="field">
+          <label>Year Built</label>
+          <input data-field="yearBuilt" type="number" value="${state.yearBuilt || ""}" min="1800" max="2100">
+        </div>
+        <div class="field">
+          <label>Square Feet</label>
+          <input data-field="squareFeet" type="number" value="${state.squareFeet || ""}" min="0">
+        </div>
+        <div class="field">
+          <label>Construction Type</label>
+          <select data-field="constructionType">
+            <option value="">—</option>
+            <option value="Frame" ${state.constructionType === "Frame" ? "selected" : ""}>Frame</option>
+            <option value="Brick" ${state.constructionType === "Brick" ? "selected" : ""}>Brick</option>
+            <option value="Stucco" ${state.constructionType === "Stucco" ? "selected" : ""}>Stucco</option>
+            <option value="Stone" ${state.constructionType === "Stone" ? "selected" : ""}>Stone</option>
+            <option value="Concrete Block" ${state.constructionType === "Concrete Block" ? "selected" : ""}>Concrete Block</option>
+            <option value="Other" ${state.constructionType === "Other" ? "selected" : ""}>Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Number of Stories</label>
+          <input data-field="numberOfStories" type="number" value="${state.numberOfStories || ""}" min="1" max="10">
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 12px">
+        <div class="field">
+          <label>Roof Type</label>
+          <select data-field="roofType">
+            <option value="">—</option>
+            <option value="Asphalt Shingle" ${state.roofType === "Asphalt Shingle" ? "selected" : ""}>Asphalt Shingle</option>
+            <option value="Metal" ${state.roofType === "Metal" ? "selected" : ""}>Metal</option>
+            <option value="Tile" ${state.roofType === "Tile" ? "selected" : ""}>Tile</option>
+            <option value="Wood Shake" ${state.roofType === "Wood Shake" ? "selected" : ""}>Wood Shake</option>
+            <option value="Slate" ${state.roofType === "Slate" ? "selected" : ""}>Slate</option>
+            <option value="Other" ${state.roofType === "Other" ? "selected" : ""}>Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Roof Age (years)</label>
+          <input data-field="roofAge" type="number" value="${state.roofAge || ""}" min="0" max="100">
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 12px">
+      <div class="card-header">
+        <strong>Coverage & Prior Policy</strong>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Dwelling Coverage (A)</label>
+          <input data-field="dwellingCoverage" type="number" value="${state.dwellingCoverage || ""}" min="0" placeholder="$">
+        </div>
+        <div class="field">
+          <label>Deductible</label>
+          <input data-field="deductible" type="number" value="${state.deductible || ""}" min="0" placeholder="$">
+        </div>
+        <div class="field">
+          <label>Prior Carrier</label>
+          <input data-field="priorCarrier" value="${state.priorCarrier || ""}" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Prior Carrier Expiration</label>
+          <input data-field="priorCarrierExpiration" type="date" value="${state.priorCarrierExpiration || ""}">
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 12px">
+      <div class="card-header">
+        <strong>Additional Information</strong>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Claims in Last 5 Years</label>
+          <select data-field="claimsLast5Years">
+            <option value="">—</option>
+            <option value="Yes" ${state.claimsLast5Years === "Yes" ? "selected" : ""}>Yes</option>
+            <option value="No" ${state.claimsLast5Years === "No" ? "selected" : ""}>No</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Occupancy</label>
+          <select data-field="occupancy">
+            <option value="">—</option>
+            <option value="Primary" ${state.occupancy === "Primary" ? "selected" : ""}>Primary</option>
+            <option value="Secondary" ${state.occupancy === "Secondary" ? "selected" : ""}>Secondary</option>
+            <option value="Rental" ${state.occupancy === "Rental" ? "selected" : ""}>Rental</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Security Alarms</label>
+          <input data-field="securityAlarms" value="${state.securityAlarms || ""}" autocomplete="off" placeholder="e.g., Smoke, Burglar">
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 12px">
+        <div class="field">
+          <label>Hydrant Distance (miles)</label>
+          <input data-field="hydrantDistance" type="number" value="${state.hydrantDistance || ""}" min="0" step="0.1">
+        </div>
+        <div class="field">
+          <label>Fire Station Distance (miles)</label>
+          <input data-field="fireStationDistance" type="number" value="${state.fireStationDistance || ""}" min="0" step="0.1">
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 12px">
+        <div class="field" style="flex: 1">
+          <label>Claims Notes</label>
+          <textarea data-field="claimsNotes" placeholder="Details about claims...">${state.claimsNotes || ""}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 12px">
+      <div class="card-header">
+        <strong>Mortgagee Information</strong>
+        <div class="actions">
+          <button type="button" data-action="copyLoanNumber">Copy Loan #</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field" style="flex: 2">
+          <label>Mortgagee Name</label>
+          <input data-field="mortgageeName" value="${state.mortgageeName || ""}" autocomplete="off">
+        </div>
+        <div class="field" style="flex: 1">
+          <label>Loan Number</label>
+          <input data-field="mortgageeLoanNumber" value="${state.mortgageeLoanNumber || ""}" autocomplete="off">
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Wire up copy buttons
+  homeContentEl.addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    const action = btn.dataset.action;
+    if (action === "copyLoanNumber") {
+      const loanNum = homeContentEl.querySelector('[data-field="mortgageeLoanNumber"]')?.value || "";
+      copy(loanNum);
+    }
+  });
+}
+
+/* ---------- Render Business Tab ---------- */
+function renderBusinessTab() {
+  const state = appState.business;
+  const wc = state.workersComp;
+  const gl = state.generalLiability;
+  
+  businessContentEl.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <strong>Business Information</strong>
+        <div class="actions">
+          <button type="button" data-action="copyTaxId">Copy Tax ID (EIN)</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field" style="flex: 2">
+          <label>Business Name</label>
+          <input data-field="businessName" value="${state.businessName || ""}" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Entity Type</label>
+          <select data-field="entityType">
+            <option value="">—</option>
+            <option value="LLC" ${state.entityType === "LLC" ? "selected" : ""}>LLC</option>
+            <option value="S-Corp" ${state.entityType === "S-Corp" ? "selected" : ""}>S-Corp</option>
+            <option value="C-Corp" ${state.entityType === "C-Corp" ? "selected" : ""}>C-Corp</option>
+            <option value="Sole Prop" ${state.entityType === "Sole Prop" ? "selected" : ""}>Sole Prop</option>
+            <option value="Partnership" ${state.entityType === "Partnership" ? "selected" : ""}>Partnership</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Tax ID (EIN)</label>
+          <input data-field="taxId" value="${state.taxId || ""}" autocomplete="off" placeholder="XX-XXXXXXX">
+        </div>
+        <div class="field">
+          <label>Years in Business</label>
+          <input data-field="yearsInBusiness" type="number" value="${state.yearsInBusiness || ""}" min="0">
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 12px">
+        <div class="field">
+          <label>NAICS Code</label>
+          <input data-field="naics" value="${state.naics || ""}" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>SIC Code</label>
+          <input data-field="sic" value="${state.sic || ""}" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 12px">
+        <div class="field" style="flex: 2">
+          <label>Business Address</label>
+          <input data-field="address" value="${state.address || ""}" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>City</label>
+          <input data-field="city" value="${state.city || ""}" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>State</label>
+          <select data-field="state">
+            <option value="">—</option>
+            ${stateOptionsHtml(state.state || "")}
+          </select>
+        </div>
+        <div class="field">
+          <label>ZIP</label>
+          <input data-field="zip" value="${state.zip || ""}" autocomplete="off" maxlength="10">
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 12px">
+        <div class="field">
+          <label>Contact Name</label>
+          <input data-field="contactName" value="${state.contactName || ""}" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Contact Phone</label>
+          <input data-field="contactPhone" value="${state.contactPhone || ""}" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Contact Email</label>
+          <input data-field="contactEmail" type="email" value="${state.contactEmail || ""}" autocomplete="off">
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 12px">
+      <div class="card-header">
+        <strong>Workers Compensation</strong>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Annual Payroll Estimate</label>
+          <input data-field="wc_payrollEstimate" type="number" value="${wc.payrollEstimate || ""}" min="0" placeholder="$">
+        </div>
+        <div class="field">
+          <label>Number of Employees</label>
+          <input data-field="wc_numberOfEmployees" type="number" value="${wc.numberOfEmployees || ""}" min="0">
+        </div>
+        <div class="field" style="flex: 2">
+          <label>Class Codes</label>
+          <input data-field="wc_classCodes" value="${wc.classCodes || ""}" autocomplete="off" placeholder="e.g., 8810, 8018">
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 12px">
+        <div class="field">
+          <label>Prior Carrier</label>
+          <input data-field="wc_priorCarrier" value="${wc.priorCarrier || ""}" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Prior Carrier Expiration</label>
+          <input data-field="wc_priorCarrierExpiration" type="date" value="${wc.priorCarrierExpiration || ""}">
+        </div>
+        <div class="field">
+          <label>Claims</label>
+          <select data-field="wc_claims">
+            <option value="">—</option>
+            <option value="Yes" ${wc.claims === "Yes" ? "selected" : ""}>Yes</option>
+            <option value="No" ${wc.claims === "No" ? "selected" : ""}>No</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 12px">
+        <div class="field" style="flex: 1">
+          <label>Claims Notes</label>
+          <textarea data-field="wc_claimsNotes" placeholder="Details about workers comp claims...">${wc.claimsNotes || ""}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 12px">
+      <div class="card-header">
+        <strong>General Liability</strong>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Annual Sales/Revenue Estimate</label>
+          <input data-field="gl_salesRevenueEstimate" type="number" value="${gl.salesRevenueEstimate || ""}" min="0" placeholder="$">
+        </div>
+        <div class="field">
+          <label>Subcontractors Used</label>
+          <select data-field="gl_subcontractorsUsed">
+            <option value="">—</option>
+            <option value="Yes" ${gl.subcontractorsUsed === "Yes" ? "selected" : ""}>Yes</option>
+            <option value="No" ${gl.subcontractorsUsed === "No" ? "selected" : ""}>No</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 12px">
+        <div class="field" style="flex: 1">
+          <label>Description of Operations</label>
+          <textarea data-field="gl_descriptionOfOperations" placeholder="Describe what the business does...">${gl.descriptionOfOperations || ""}</textarea>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 12px">
+        <div class="field">
+          <label>Prior Carrier</label>
+          <input data-field="gl_priorCarrier" value="${gl.priorCarrier || ""}" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Prior Carrier Expiration</label>
+          <input data-field="gl_priorCarrierExpiration" type="date" value="${gl.priorCarrierExpiration || ""}">
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Wire up copy buttons
+  businessContentEl.addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    const action = btn.dataset.action;
+    if (action === "copyTaxId") {
+      const taxId = businessContentEl.querySelector('[data-field="taxId"]')?.value || "";
+      copy(taxId);
+    }
+  });
+}
+
 /* ---------- localStorage persistence ---------- */
 let autosaveTimer = null;
 
@@ -312,19 +915,46 @@ function scheduleAutosave(statusText = "Auto-saved locally") {
   saveStatusEl.textContent = statusText;
   clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(() => {
-    const data = getFormData();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    getAppStateFromUI();
+    saveToLocalStorage();
     saveStatusEl.textContent = "Auto-saved locally";
   }, 150);
+}
+
+function saveToLocalStorage() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
 }
 
 function loadFromLocalStorage() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return null;
-  try { return JSON.parse(raw); } catch { return null; }
+  try {
+    const parsed = JSON.parse(raw);
+    return migrateOldFormat(parsed);
+  } catch {
+    return null;
+  }
 }
 
-/* ---------- File Save/Open (best way) ---------- */
+/* ---------- JSON Export/Import ---------- */
+function exportJSON() {
+  getAppStateFromUI();
+  return JSON.parse(JSON.stringify(appState)); // Deep clone
+}
+
+function importJSON(data) {
+  const migrated = migrateOldFormat(data);
+  // Merge into appState
+  Object.assign(appState, migrated);
+  // Ensure nested objects exist
+  if (!appState.home) appState.home = getDefaultAppState().home;
+  if (!appState.business) appState.business = getDefaultAppState().business;
+  if (!appState.business.workersComp) appState.business.workersComp = getDefaultAppState().business.workersComp;
+  if (!appState.business.generalLiability) appState.business.generalLiability = getDefaultAppState().business.generalLiability;
+  applyAppStateToUI(appState);
+}
+
+/* ---------- File Save/Open ---------- */
 let fileHandle = null;
 
 function fileApiSupported() {
@@ -339,7 +969,8 @@ async function saveToHandle(handle, dataObj) {
 }
 
 async function saveAsFile() {
-  const data = getFormData();
+  getAppStateFromUI();
+  const data = exportJSON();
 
   if (!fileApiSupported()) {
     toast("File save not supported here. Use Download JSON instead.");
@@ -357,8 +988,6 @@ async function saveAsFile() {
 }
 
 async function saveFile() {
-  const data = getFormData();
-
   if (!fileApiSupported()) {
     toast("File save not supported here. Use Download JSON instead.");
     return;
@@ -369,6 +998,8 @@ async function saveFile() {
     return;
   }
 
+  getAppStateFromUI();
+  const data = exportJSON();
   await saveToHandle(fileHandle, data);
   toast("Saved");
 }
@@ -389,11 +1020,10 @@ async function openFile() {
   const obj = JSON.parse(text);
 
   fileHandle = handle;
-  setFormData(obj);
+  importJSON(obj);
   toast("Opened");
 }
 
-/* ---------- Download/Import fallback ---------- */
 function safeFilenameFromCustomer(data) {
   const name = (data?.customer?.name || "intake").trim().replace(/[^\w\- ]+/g, "");
   const date = new Date().toISOString().slice(0, 10);
@@ -401,7 +1031,8 @@ function safeFilenameFromCustomer(data) {
 }
 
 function downloadJson() {
-  const data = getFormData();
+  getAppStateFromUI();
+  const data = exportJSON();
   const text = JSON.stringify(data, null, 2);
   jsonBoxEl.value = text;
 
@@ -422,8 +1053,8 @@ function importFromJsonBox() {
   if (!raw) return toast("Paste JSON into the box first");
   try {
     const obj = JSON.parse(raw);
-    fileHandle = null; // importing breaks link to any existing file
-    setFormData(obj);
+    fileHandle = null;
+    importJSON(obj);
     toast("Imported");
   } catch {
     toast("Invalid JSON");
@@ -433,22 +1064,13 @@ function importFromJsonBox() {
 /* ---------- New intake ---------- */
 function newIntake() {
   fileHandle = null;
-
-  const blank = {
-    customer: { name: "", phone: "", email: "" },
-    counts: { drivers: 1, vehicles: 1 },
-    drivers: [{ name: "", dob: "", licenseState: "", license: "" }],
-    vehicles: [{ vin: "", decoded: "—" }],
-    meta: { version: 1, updatedAt: new Date().toISOString() }
-  };
-
-  setFormData(blank);
+  appState = getDefaultAppState();
+  applyAppStateToUI(appState);
   toast("New intake");
 }
 
 /* ---------- Event wiring ---------- */
 function wireAutosaveListeners() {
-  // Any input/select change triggers autosave
   document.addEventListener("input", (e) => {
     if (e.target.matches("input, textarea, select")) {
       scheduleAutosave("Typing...");
@@ -466,18 +1088,18 @@ function init() {
   populateSelect(driverCountEl, 10, 1);
   populateSelect(vehicleCountEl, 10, 1);
 
-  // Render initial
-  renderDrivers(1, []);
-  renderVehicles(1, []);
-
-  // Count changes: preserve existing typed data
+  // Auto count changes
   driverCountEl.addEventListener("change", (e) => {
-    renderDrivers(Number(e.target.value));
+    getAppStateFromUI();
+    appState.auto.driverCount = Number(e.target.value);
+    renderDrivers(appState.auto.driverCount, appState.auto.drivers);
     scheduleAutosave("Updated drivers");
   });
 
   vehicleCountEl.addEventListener("change", (e) => {
-    renderVehicles(Number(e.target.value));
+    getAppStateFromUI();
+    appState.auto.vehicleCount = Number(e.target.value);
+    renderVehicles(appState.auto.vehicleCount, appState.auto.vehicles);
     scheduleAutosave("Updated vehicles");
   });
 
@@ -497,9 +1119,10 @@ function init() {
   // Load last autosaved draft
   const saved = loadFromLocalStorage();
   if (saved) {
-    setFormData(saved);
+    importJSON(saved);
     toast("Restored last draft (local)");
   } else {
+    renderTab("auto");
     scheduleAutosave("Auto-saved locally");
   }
 
