@@ -69,11 +69,46 @@
       transition: opacity 0.2s ease;
     }
     .toast.show { opacity: 0.92; }
+
+    /* Tab styles */
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      border-bottom: 2px solid #ddd;
+      padding-bottom: 0;
+    }
+    .tab {
+      padding: 10px 20px;
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      cursor: pointer;
+      font-size: 14px;
+      color: #666;
+      margin-bottom: -2px;
+      transition: all 0.2s;
+    }
+    .tab:hover {
+      color: #333;
+      background: #f8f8f8;
+    }
+    .tab.active {
+      color: #333;
+      font-weight: 600;
+      border-bottom-color: #0066cc;
+    }
+    .tab-panel {
+      display: none;
+    }
+    .tab-panel.active {
+      display: block;
+    }
   </style>
 </head>
 
 <body>
-  <h1>Basic Quote Intake</h1>
+  <h1>Quote Intake Tool</h1>
 
   <div class="card">
     <div class="card-header">
@@ -107,17 +142,6 @@
     </div>
 
     <div class="row" style="margin-top:12px">
-      <div class="field">
-        <label># Drivers</label>
-        <select id="driverCount"></select>
-      </div>
-      <div class="field">
-        <label># Vehicles</label>
-        <select id="vehicleCount"></select>
-      </div>
-    </div>
-
-    <div class="row" style="margin-top:12px">
       <div class="field" style="min-width: 100%">
         <label>Import / Export JSON</label>
         <textarea id="jsonBox" placeholder="Export will appear here, or paste JSON here and click Import JSON"></textarea>
@@ -129,11 +153,42 @@
     </div>
   </div>
 
-  <h2>Drivers</h2>
-  <div id="drivers"></div>
+  <!-- Tab Navigation -->
+  <div class="tabs">
+    <button class="tab active" data-tab="auto">Auto</button>
+    <button class="tab" data-tab="home">Home</button>
+    <button class="tab" data-tab="business">Business</button>
+  </div>
 
-  <h2>Vehicles</h2>
-  <div id="vehicles"></div>
+  <!-- Auto Tab -->
+  <div id="tabAuto" class="tab-panel active">
+    <div class="row" style="margin-bottom: 12px">
+      <div class="field">
+        <label># Drivers</label>
+        <select id="driverCount"></select>
+      </div>
+      <div class="field">
+        <label># Vehicles</label>
+        <select id="vehicleCount"></select>
+      </div>
+    </div>
+
+    <h2>Drivers</h2>
+    <div id="drivers"></div>
+
+    <h2>Vehicles</h2>
+    <div id="vehicles"></div>
+  </div>
+
+  <!-- Home Tab -->
+  <div id="tabHome" class="tab-panel">
+    <div id="homeContent"></div>
+  </div>
+
+  <!-- Business Tab -->
+  <div id="tabBusiness" class="tab-panel">
+    <div id="businessContent"></div>
+  </div>
 
   <div id="toast" class="toast"></div>
 
